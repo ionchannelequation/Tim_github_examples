@@ -1,0 +1,61 @@
+module ccmul3(clk,  xin,yin,cin,cplusin, cminusin, rout, iout);
+parameter W2 = 17,  // Multiplier bit width
+	W1 = 9,    // C+S bit width 
+	W = 8; // Input Bit width
+input [ W-1:0]cin, xin, yin ; input clk; 
+input [W1-10] cplusin, cminusin; // C+S and C-S cosine minus Sine and 
+// Cosine plus Sine
+ output [W-1:0] rout, iout; // The bitwidth will be adjusted down from 
+wire [W-1:0] x,y,c; wire [W1-1:0] xmy, cps , cms , xMy, sum;
+// cps = C+S; cms = C-S; xmy = x -y;
+ wire [W2-1:0] r,i;	// Intermediate multiplier outputs 
+wire [ W2-1:0] cmsy , cpsx, xmyc, sum; // Multiplier outputs
+// xMyc = (x-y)*c; cmsy = (C-S)*y; cpsx = (C+S)*X ; sum
+// 16 bits of multiplier bits to 8 bits
+assign x = xin; assign y = yin; assign c = cin;  //cos 
+// This is to shorten signal names in the description
+assign cps = cplusin;// cos + sin
+assign cms = cminusin; // cos-sin
+// Auxiliary Signals block 
+wire clken , cr1, ovl1,cin1, aclr, ADD,SUB;// clock enable 
+// aclr – a clear ; ADD – Add control signal SUB = Subtract Control Signal
+ assign cin1 = 0; assign cr1 = 0; assign sum = 0; assign clken= 0;
+ assign ADD=1; assign SUB= 0; 
+// Define Sign extended versions of the inputs x and y
+  assign sxtx = {x[W-1], x}; assign syty  = {y[W-1],y};
+ // First block replacement of lpm subract x-y with sign extension
+ always @(posedge clk) begin  xmy <=( sxtx – syty); end 
+// No need of defparam as it’s a simple subtraction
+// Next always block computed (x-y)*C
+always @(posedge clk) begin  xmyc <=( sxtx – syty)*c; end 
+// Synthesis tool will optimize out the sxtx-syty usually 
+// Older style of code 
+always @(posedge clk) begin  xmyc <=( xmy)*c; end 
+// Bitwidth of xmyc = W2;
+	// In this case a Lattice signed multiplier module with a input bitW = 9 coefficient
+	// 8 bits (X-y)  and W2-17 bits
+	// The Next Multiplier or always block produces the result (C+S)*X
+		always @( posedge clk) begin 
+		cpsx <= cps *x;
+		end
+	// This always block can be replaced by an instantiated Multiplier
+	// Cps Coefficient Width = W1(9); x = data width = 8; 
+	// W2 width = 17 bits 
+	// signed multiplier must be instantiated 
+
+
+	// The Next Multiplier or always block produces the result (C-S)*Y
+		always @(posedge clk) begin 
+		cmsy <= cms *y;
+		end
+	// This always block can be replaced by an instantiated Multiplier
+	// Cps Coefficient Width = W1(9); y = data width = 8; 
+	// W2 width = 17 bits 
+	// signed multiplier must be instantiated 
+// Stage 3 in this stage the results 
+// R = (C-S)*y +(x-y)*C; I = (C+S)*X – (X-Y)*C
+always@(posedge clk ) begin
+	r <= cmsy + xmyc;
+	 i <=  cpsx - xmyc;
+end
+endmodule
