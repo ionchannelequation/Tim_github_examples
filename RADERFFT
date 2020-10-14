@@ -1,0 +1,92 @@
+module rader7( clk, x_in,y_real,y_imag);
+input clk; input [7:0] x_in; output [10:0] y_real, y_imag;
+reg [ 10:0] y_real, y_imag; 	reg [10:0] accu;
+  reg [18:0]	imag0, imag1, imag2, imag3, imag4, imag5;
+  reg [18:0]		real0, real1, real2, real3, real4, real5; // TDL- Tappde delay line
+reg [18:0] x57, x111, x160, x200, x231, x250; // The Filter coefficients 
+reg [ 18:0] x5, x25, x110, x125, x256; // Auxiliary Filter coefficients
+reg [ 7:0] x, x_0; // Signals for x[0]
+wire [18:0] x_sxt, x_0_sxt; 
+// First try up top here
+assign x_sxt = {{9{x[7]}},x}; // Sign extension of input 
+assign x_0_sxt = {{ 9{x_0[7]}},x_0}; // and x[0]
+always @(posedge clk) // State Machine for RADER filter 
+begin 
+ parameter Start=0, Load=1, Run=2;
+    reg [1:0] state; reg [4:0] count;
+case (state )
+	Start: begin	 // Initialization Step
+	state <= Load;
+count <= 1;
+	x_0 <= x_in ; // Save x[0]
+	accu <= 	0;  // Reset Accumulator
+	y_real <= 0; y_imag <= 0;
+	end
+	Load : begin // Load State 
+	// Apply x[5], x[4], x[6]
+		if  ( count == 8)		// Load phase done 
+			state <= Run; //  Run State
+		else begin
+			state <= Load;  // Load State
+			accu <= accu + x_sxt;
+		end
+			count = count + 1;
+		end
+	Run : begin 		// Run state
+		if ( count == 15)		 begin
+			y_real <= accu; 		// X[0]
+			y_imag <= 0; 		// Only re inputs iei IM(X[0]
+			state <= Start;
+		end
+		else begin
+			y_real <= ( real0 >> 8) + x_0_sxt; // real[0]/256 + x[0]
+			y_imag <= (imag0 >> 8);
+			state <=  Run;
+			end 
+				count <= count + 1;
+		end
+	endcase
+end
+// 2nd try up to here
+// The next part are the two FIR stype filter structures of RADER FFT
+always @(posedge clk)
+		begin : Structure 
+			x <= x_in;
+			// Real part of FIR in transposed form
+			real0 <= real1 + x160;		//w^1
+			real1 <= real2 -  x231;		//w^3
+			real2 <= real3 -  x57;		//w^2
+			real3 <= real4 -  x160;		//w^6
+			real4 <= real5 -  x231;		//W^4
+			real5 <= -x57;			//W^5
+// Imaginary part of FIR Filter in transposed form
+
+				imag0 	<= imag1- x200; 		//W^1
+				imag1	<= imag2-x111;		//w^3
+				imag2 	<= imag3-x250;		//W^2
+				imag3	<= imag4-x200;		//w^6
+				imag4 <= imag5+ x111;		//W^4	
+				imag5 <= x250;				//w^5
+
+		end
+  always @(posedge clk)			// All Signals are globally defined
+	begin // : Coefficients 
+			x160 <= x5 << 5;  	 // ie 160 = 5*32
+			x200 <=	x25 << 3;	// ie 200 = 25*8
+			x250 <= x125 << 1; 	// ie 250 = 125 * 2
+		x57   <=  x25 + ( x << 5); 	// 57 = 25 + 32
+		x111 <=  x110 + x; 	//111 = 110 + 1;
+		
+      x231 <= x256 - x25;		// 231 = 256 – 25
+end
+always @(posedge clk)
+begin//  : Factors 
+// Compute wth Auxiliary Factor for RAG without a FF
+	x5 <= ( x_sxt <<2) + x_sxt;	 //  ie 5 = 4 + 1
+	x25 <= ( x5 <<2 ) + x5; 		// ie 25 = 5*4+5 
+	x110 <= ( x25 << 2) + ( x5 <<2);  // ie 110 = 25*4 + 5*4
+	x125 <= ( x25 <<2) ; 		// 125 = 25*4 + 25;
+	x125 <= x125 + x25;
+	x256 <= x_sxt << 8 ; 		//256 = 2^8
+end
+endmodule
